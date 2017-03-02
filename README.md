@@ -42,9 +42,9 @@ See nested projects for more info about building.
 - off -> static red - HorizonM failed to enter the main loop, it means that it softlocked or crashed during initialization
   - contrib/dev: check rsf permissions
 - anything -> static white - a C++ exception occurred (most likely memory allocation failure)
-- anything -> slow rainbow - `wait4wifi()`, waiting for wifi availability
-- slow rainbow -> static dark yellow - failed to reinitialize networking (due to a program bug or a failed race condition)
-- anything -> static dark yellow - `hangmacro()`, indicates a fatal error that didn't crash the process
+- anything -> bright yellow - `wait4wifi()`, waiting for wifi availability
+- bright yellow -> blinking dark yellow - failed to reinitialize networking (due to a program bug or a failed race condition)
+- anything -> blinking dark yellow - `hangmacro()`, indicates a fatal error that didn't crash the process
 - light blue -> rapid flashing red - failed to create the network thread (out of resources)
 - light blue -> green - network thread started, initializing stuff
 - green && pink blink - connection estabilished with HorizonScreen

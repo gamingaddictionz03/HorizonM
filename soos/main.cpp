@@ -208,7 +208,14 @@ void PatPulse(u32 col)
 
 #define hangmacro()\
 {\
-    PatStay(0x7FFF);\
+    memset(&pat.r[0], 0x7F, 16);\
+    memset(&pat.g[0], 0x7F, 16);\
+    memset(&pat.b[0], 0x00, 16);\
+    memset(&pat.r[16],0x30, 16);\
+    memset(&pat.g[16],0x30, 16);\
+    memset(&pat.b[16],0x30, 16);\
+    pat.ani = 0x0806;\
+    PatApply();\
     while(1)\
     {\
         hidScanInput();\
@@ -450,19 +457,14 @@ static GSPGPU_CaptureInfo capin;
 
 static int isold = 1;
 
-static int connectd = 0;
-static u32 offs[2] = {0, 0};
-
-static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
-
 static Result ret = 0;
 static int cx = 0;
 static int cy = 0;
 
+static u32 offs[2] = {0, 0};
 static u32 limit[2] = {1, 1};
-static u32 stride[2] = {80, 80}; 
-
-static u32 bsiz[2] = {2, 2};
+static u32 stride[2] = {80, 80};
+static u32 format[2] = {0xF00FCACE, 0xF00FCACE};
 
 static int sock = 0;
 
@@ -491,14 +493,7 @@ void netfunc(void* __dummy_arg__)
     
     PatStay(0xFF00);
     
-    k->packetid = 2; //MODE
-    k->size = 4;
-    k->data[0] = format[0];
-    k->data[1] = bsiz[0];
-    k->data[2] = format[1];
-    k->data[3] = bsiz[1];
-    
-    soc->wribuf();
+    format[0] = 0xF00FCACE; //invalidate
     
 
     PatPulse(0x7F007F);
@@ -560,33 +555,45 @@ void netfunc(void* __dummy_arg__)
             //if((u32)capin.screencapture[0].framebuf0_vaddr < 0x1C000000)
             //    *((u32*)&capin.screencapture[0].framebuf0_vaddr) += 0x1C000000;
             
-            //if(fbtop >= 0x14008000)
-            //if((u32)capin.screencapture[0].framebuf0_vaddr > 0x14008000)
-            if((u32)capin.screencapture[0].framebuf0_vaddr >= 0x1F000000)
+            if\
+            (\
+                capin.screencapture[0].format != format[0]\
+                ||\
+                capin.screencapture[1].format != format[1]\
+            )
             {
-                //if(0)
-                if(capin.screencapture[0].format != format[0])
-                {
-                    format[0] = capin.screencapture[0].format;
-                    
-                    bsiz[0] = __get_bytes_per_pixel((GSPGPU_FramebufferFormats)(format[0] & 7));
-                    
-                    k->packetid = 2; //MODE
-                    k->size = 4;
-                    k->data[0] = format[0];
-                    k->data[1] = bsiz[0];
-                    k->data[2] = format[1];
-                    k->data[3] = bsiz[1];
-                    soc->wribuf();
-                    
-                    k->packetid = 0xFF;
-                    k->size = sizeof(capin);
-                    *(GSPGPU_CaptureInfo*)k->data = capin;
-                    soc->wribuf();
-                    svcSleepThread(1e9);
-                }
+                format[0] = capin.screencapture[0].format;
+                format[1] = capin.screencapture[1].format;
                 
-                siz = (240 * bsiz[0] * stride[0]);
+                k->packetid = 2; //MODE
+                k->size = 4 * 4;
+                
+                u32* kdata = (u32*)k->data;
+                
+                kdata[0] = format[0];
+                kdata[1] = capin.screencapture[0].framebuf_widthbytesize;
+                kdata[2] = format[1];
+                kdata[3] = capin.screencapture[1].framebuf_widthbytesize;
+                soc->wribuf();
+                
+                k->packetid = 0xFF;
+                k->size = sizeof(capin);
+                *(GSPGPU_CaptureInfo*)k->data = capin;
+                soc->wribuf();
+            }
+            
+            //if(fbtop >= 0x14008000)
+            // yes, I know this indentation is cancer
+            // also, I know I'm a lazy fuck for only allowing VRAM framebuffers
+            //TODO find a way to read from LINEARmemeory without AcquireRights
+            if\
+            (\
+                (u32)capin.screencapture[0].framebuf0_vaddr >= 0x1F000000\
+                 &&\
+                (u32)capin.screencapture[0].framebuf0_vaddr <  0x1F600000\
+            )
+            {
+                siz = (capin.screencapture[0].framebuf_widthbytesize * stride[0]);
                 
                 k->packetid = 3; //DATA
                 k->size = siz;
@@ -613,11 +620,10 @@ void netfunc(void* __dummy_arg__)
                 memcpy(k->data + 4, screenbuf, siz);
                 //memcpy(k->data + 4, ((u8*)fbtop) + *(u32*)k->data, siz);
                 */
+                
                 if(++offs[0] == limit[0]) offs[0] = 0;
                 k->size += 4;
                 soc->wribuf();
-                
-                //svcSleepThread(1e7);
                 
             }
             else
@@ -632,36 +638,25 @@ void netfunc(void* __dummy_arg__)
                 svcSleepThread(1e9);
             }
             
-            /*
-            if((u32)capin.screencapture[1].framebuf0_vaddr > 0x14008000)
+            if\
+            (\
+                (u32)capin.screencapture[1].framebuf0_vaddr >= 0x1F000000\
+                &&\
+                (u32)capin.screencapture[1].framebuf0_vaddr <  0x1F600000\
+            )
             {
-                if(capin.screencapture[1].format != format[1])
-                {
-                    format[1] = capin.screencapture[1].format;
-                    
-                    bsiz[1] = __get_bytes_per_pixel((GSPGPU_FramebufferFormats)(format[1] & 7));
-                    
-                    k->packetid = 2; //MODE
-                    k->size = 4;
-                    k->data[0] = format[0];
-                    k->data[1] = bsiz[0];
-                    k->data[2] = format[1];
-                    k->data[3] = bsiz[1];
-                    soc->wribuf();
-                }
-                
-                siz = (240 * bsiz[1] * stride[1]);
+                siz = (capin.screencapture[1].framebuf_widthbytesize * stride[1]);
                 
                 k->packetid = 3; //DATA
                 k->size = siz;
-                *(u32*)k->data = (siz * offs[1]);
+                *(u32*)k->data = siz * offs[1];
                 memcpy(k->data + 4, ((u8*)capin.screencapture[1].framebuf0_vaddr) + *(u32*)k->data, siz);
-                if(++offs[1] == limit[1]) offs[1] = 0;
+                if(++offs[0] == limit[0]) offs[0] = 0;
                 k->size += 4;
-                *(u32*)k->data += (240 * 400 * 4);
+                *(u32*)k->data += 256 * 400 * 4;
                 soc->wribuf();
                 
-            }*/
+            }
             
             //svcSleepThread(2e7);
             
@@ -826,11 +821,11 @@ int main()
                     
                     if(isold)
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x400, 8, 0, true);
+                        netthread = threadCreate(netfunc, nullptr, 0x400, 8, 1, true);
                     }
                     else
                     {
-                        netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 2, true);
+                        netthread = threadCreate(netfunc, nullptr, 0x4000, 8, 3, true);
                     }
                     
                     if(!netthread)

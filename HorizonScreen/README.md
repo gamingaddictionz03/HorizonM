@@ -17,9 +17,9 @@ slave application for HorizonM's screen streaming feature
 - Get the IP address of your 3DS
 - Launch HorizonM
 - Run `out/PC/HorizonScreen-PC.elf <IP address of your 3DS>`
-  - Example: `./HorizonScreen 10.0.0.103`
+  - Example: `out/PC/HorizonScreen-PC.elf 10.0.0.103`
 - If HorizonScreen freezes, terminate it either by pressing `CTRL-C`/`STRG-C` in the terminal, or send the application a `SIGTERM` or `SIGKILL`
 
 
-###### ~~And if you order now, you'll get a `SIGSEGV` for FREE!~~
+###### ~~And if you order now, you'll get a `SIGSEGV` or `SIGFPT` for FREE!~~
                                                           

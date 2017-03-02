@@ -25,12 +25,9 @@ extern "C"
 using ::abs;
 using namespace std;
 
-static jmp_buf __exc;
-static int  __excno;
+#define FPSNO 5
 
-#define FPSNO 10
-
-float fps = -1.0F;
+float fps = 0.0F;
 u32 fpsticks[FPSNO];
 u32 fpstick = 0;
 int currwrite = 0;
@@ -161,6 +158,7 @@ public:
     }
 };
 
+
 int PumpEvent()
 {
     SDL_Event evt;
@@ -175,42 +173,6 @@ int PumpEvent()
             case SDL_QUIT:
             case SDL_APP_TERMINATING:
                 return 0;
-            
-            /*
-            case SDL_WINDOWEVENT:
-                switch(evt.window.event)
-                {
-                    case SDL_WINDOWEVENT_MINIMIZED:
-                        while(SDL_WaitEvent(&evt))
-                        {
-                            switch(evt.type)
-                            {
-                                case SDL_QUIT:
-                                case SDL_APP_TERMINATING:
-                                    return 0;   
-                            }
-                            if(evt.type != SDL_WINDOWEVENT) continue;
-                            if(evt.window.event == SDL_WINDOWEVENT_RESTORED) break;
-                        }
-                        
-                        break;
-                        
-                    //case SDL_WINDOWEVENT_RESIZED:
-                    //    puts("Window resized");                        
-                    //    break;
-                    
-                    default:
-                        //printf("Window event: %i\n", evt.window.event);
-                        
-                        break;
-                }
-                
-                break;*/
-                
-            default:
-                //printf("SDL Event: %i\n", evt.type);
-                
-                break;
         }
     }
     
@@ -228,15 +190,20 @@ SDL_Surface* img[2] = {0, 0};
 
 int port = 6464;
 int sock = 0;
-u8 sbuf[400 * 240 * 4 * 2];
-u8 mehbuf[400 * 240 * 4 * 2];
 struct sockaddr_in sao;
 socklen_t sizeof_sao = sizeof(sao);
-uint64_t dummy[2] = {0, 0};
 bufsoc* soc = 0;
-int pixfmt[2] = {SDL_PIXELFORMAT_RGB888, SDL_PIXELFORMAT_RGB888};
-int bsiz[2] = {3, 3};
 bufsoc::packet* p = 0;
+
+u32* pdata = 0;
+
+
+u8 sbuf[256 * 400 * 4 * 2];
+u8 mehbuf[256 * 400 * 4 * 2];
+int pixfmt[2] = {SDL_PIXELFORMAT_RGB565, SDL_PIXELFORMAT_RGB565};
+int srcfmt[2] = {3, 3};
+int stride[2] = {480, 480};
+int bsiz[2] = {2, 2};
 int ret = 0;
 
 
@@ -258,6 +225,11 @@ int main(int argc, char** argv)
     if(sock < 0) errfail(socket);
     soc = new bufsoc(sock, 0x200000);
     p = soc->pack();
+    
+    ret = connect(sock, (sockaddr*)&sao, sizeof_sao);
+    if(ret < 0) errfail(connect); 
+    
+    puts("Connected");
     
     //SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
@@ -284,12 +256,18 @@ int main(int argc, char** argv)
     img[0] = SDL_CreateRGBSurfaceWithFormat(0, 240, 400, 32, pixfmt[0]);
     img[1] = SDL_CreateRGBSurfaceWithFormat(0, 240, 320, 32, pixfmt[1]);
     
-    SDL_RenderSetLogicalSize(rendertop, 400 + 320, 240);
+    SDL_RenderSetLogicalSize(rendertop, 720, 240);
     
-    ret = connect(sock, (sockaddr*)&sao, sizeof_sao);
-    if(ret < 0) errfail(connect); 
-    
-    puts("Connected");
+    do
+    {
+        int i = sizeof(sbuf) >> 2;
+        u32* _1 = (u32*)sbuf;
+        while(i--)
+        {
+            *(_1++) = rand();
+        }
+    }
+    while(0);
     
     while(PumpEvent())
     {
@@ -301,66 +279,62 @@ int main(int argc, char** argv)
         switch(p->packetid)
         {
             case 2:
-                printf("ModeTOP: %i (o: %i, bytesize: %i)\n", p->data[0], p->data[0] & 7, p->data[1]);
-                printf("ModeBOT: %i (o: %i, bytesize: %i)\n", p->data[2], p->data[2] & 7, p->data[3]);
-                bsiz[0] = p->data[1];
-                pixfmt[0] = SDL_PIXELFORMAT_RGB24;
+                pdata = (u32*)p->data;
                 
-                switch(p->data[0] & 7)
+                printf("ModeTOP: %04X (o: %i, bytesize: %i)\n", pdata[0], pdata[0] & 7, pdata[1]);
+                printf("ModeBOT: %04X (o: %i, bytesize: %i)\n", pdata[2], pdata[2] & 7, pdata[3]);
+                
+                srcfmt[0] = pdata[0];
+                stride[0] = pdata[1];
+                srcfmt[1] = pdata[2];
+                stride[1] = pdata[3];
+                
+                bsiz[0] = stride[0] / 240;
+                bsiz[1] = stride[1] / 240;
+                
+                switch(pdata[0] & 7)
                 {
                     case 0:
                         pixfmt[0] = SDL_PIXELFORMAT_RGBA8888;
-                        bsiz[0] = 4;
                         break;
                     case 2:
                         pixfmt[0] = SDL_PIXELFORMAT_RGB565;
-                        bsiz[0] = 2;
                         break;
                     case 3:
                         pixfmt[0] = SDL_PIXELFORMAT_RGBA5551;
-                        bsiz[0] = 2;
                         break;
                     case 4:
                         pixfmt[0] = SDL_PIXELFORMAT_RGBA4444;
-                        bsiz[0] = 2;
                         break;
                     default:
                         pixfmt[0] = SDL_PIXELFORMAT_BGR24;
-                        bsiz[0] = 3;
                         break;
                 }
                 
-                bsiz[1] = p->data[3];
-                pixfmt[1] = SDL_PIXELFORMAT_RGB24;
-                
-                switch(p->data[2] & 7)
+                switch(pdata[2] & 7)
                 {
                     case 0:
                         pixfmt[1] = SDL_PIXELFORMAT_RGBA8888;
-                        bsiz[1] = 4;
                         break;
                     case 2:
                         pixfmt[1] = SDL_PIXELFORMAT_RGB565;
-                        bsiz[1] = 2;
                         break;
                     case 3:
                         pixfmt[1] = SDL_PIXELFORMAT_RGBA5551;
-                        bsiz[1] = 2;
                         break;
                     case 4:
                         pixfmt[1] = SDL_PIXELFORMAT_RGBA4444;
-                        bsiz[1] = 2;
                         break;
                     default:
                         pixfmt[1] = SDL_PIXELFORMAT_BGR24;
-                        bsiz[1] = 3;
                         break;
                 }
                 
                 SDL_FreeSurface(img[0]);
                 SDL_FreeSurface(img[1]);
-                img[0] = SDL_CreateRGBSurfaceWithFormat(0, 240, 400, bsiz[0] << 3, pixfmt[0]);
-                img[1] = SDL_CreateRGBSurfaceWithFormat(0, 240, 320, bsiz[1] << 3, pixfmt[1]);
+                
+                img[0] = SDL_CreateRGBSurfaceWithFormat(0, stride[0] / bsiz[0], 400, bsiz[0] << 3, pixfmt[0]);
+                img[1] = SDL_CreateRGBSurfaceWithFormat(0, stride[1] / bsiz[1], 320, bsiz[1] << 3, pixfmt[1]);
                 break;
             
             case 3:
@@ -372,6 +346,7 @@ int main(int argc, char** argv)
                     u32 prev = SDL_GetTicks() - fpstick;
                     fpsticks[currwrite++] = prev;
                     fpstick = SDL_GetTicks();
+                    if(currwrite == FPSNO) currwrite = 0;
                 }
                 break;
             }
@@ -399,11 +374,11 @@ int main(int argc, char** argv)
         nocoffei:
         
         SDL_LockSurface(img[0]);
-        memcpy(img[0]->pixels, sbuf, 240 * 400 * bsiz[0]);
+        memcpy(img[0]->pixels, sbuf, stride[0] * 400);
         SDL_UnlockSurface(img[0]);
         
         SDL_LockSurface(img[1]);
-        memcpy(img[1]->pixels, sbuf + (240 * 400 * 4), 240 * 320 * bsiz[1]);
+        memcpy(img[1]->pixels, sbuf + (256 * 400 * 4), stride[1] * 320);
         SDL_UnlockSurface(img[1]);
         
         SDL_DestroyTexture(tex[0]);
@@ -415,18 +390,29 @@ int main(int argc, char** argv)
         center.x = 0;
         center.y = 0;
         
+        SDL_Rect soos;
+        soos.x = 0;
+        soos.y = 0;
+        soos.w = 240;
+        soos.h = 400;
+        
         SDL_Rect dest;
         dest.x = 0;
         dest.y = 240;
         dest.w = 240;
         dest.h = 400;
-        SDL_RenderCopyEx(rendertop, tex[0], nullptr, &dest, 270.0F, &center, SDL_FLIP_NONE);
+        SDL_RenderCopyEx(rendertop, tex[0], &soos, &dest, 270.0F, &center, SDL_FLIP_NONE);
+        
+        soos.x = 0;
+        soos.y = 0;
+        soos.w = 240;
+        soos.h = 320;
         
         dest.x = 400;
         dest.y = 240;
         dest.w = 240;
         dest.h = 320;
-        SDL_RenderCopyEx(rendertop, tex[1], nullptr, &dest, 270.0F, &center, SDL_FLIP_NONE);
+        SDL_RenderCopyEx(rendertop, tex[1], &soos, &dest, 270.0F, &center, SDL_FLIP_NONE);
         
         SDL_RenderPresent(rendertop);
         
