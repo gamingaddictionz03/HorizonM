@@ -9,8 +9,8 @@ slave application for HorizonM's screen streaming feature
 
 
 ## Building
-- install gcc and g++ 5.x
-- instlall libSDL2-dev 2.0.5+
+- install `gcc` and `g++` 5.x
+- compile and install `libSDL2-dev` **2.0.5+**
 - `make`
 
 ## Getting started

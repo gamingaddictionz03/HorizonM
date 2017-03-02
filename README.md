@@ -8,6 +8,12 @@ utility background process for the Horizon operating system (Nintendo 3DS)
 * screen streaming using HorizonScreen
 
 
+## Credits
+- Minnow - figuring out that Base processes can be used
+- ihaveamac - pointing me towards the right direction for fixing memory allocation on new3DS
+- NekoWasHere @ reddit - betatesting
+- JayLine_ @ reddit - betatesting
+
 ## Building
 - instlall devkitARM (bundled with [devkitPro](http://devkitpro.org))
 - `make`
