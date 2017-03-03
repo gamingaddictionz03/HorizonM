@@ -217,10 +217,10 @@ SDL_Surface* mksurface(int width, int height, int bsiz, int pixfmt)
             bs = 2;
             break;
         case 3:
-            rm = 0x001F;
-            gm = 0x03E0;
-            bm = 0x7C00;
-            am = 0x8000;
+            rm = 0xF800;
+            gm = 0x07C0;
+            bm = 0x003E;
+            am = 0x0001;
             bs = 2;
             break;
         case 4:
