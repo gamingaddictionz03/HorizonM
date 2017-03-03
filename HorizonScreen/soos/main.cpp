@@ -1,3 +1,4 @@
+#define _WIN32_WINNT 0x0501
 #include <platform.hpp>
 
 extern "C"
@@ -11,14 +12,32 @@ extern "C"
 #include <setjmp.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if __APPLE__
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <errno.h>
 #include <stdarg.h>
 #include <fcntl.h>
-#include <poll.h>
+#ifndef WIN32
 #include <arpa/inet.h>
 #include <netdb.h>
+typedef int SOCKET;
+typedef struct pollfd WSAPOLLFD;
+#endif
+#include <poll.h>
+
+#include "inet_pton.h"
 }
+
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+//#include <mstcpip.h>
+typedef int socklen_t;
+#define errno WSAGetLastError()
+#endif
 
 #include <exception>
 
@@ -36,15 +55,16 @@ int oldwrite = 0;
 #define errfail(func) { printf("\n" #func " fail: (%i) %s\n", errno, strerror(errno)); goto killswitch; }
 
 
-int pollsock(int sock, int wat, int timeout = 0)
+int pollsock(SOCKET sock, int wat, int timeout = 0)
 {
-    struct pollfd pd;
+#ifndef WIN32
+    WSAPOLLFD pd;
     pd.fd = sock;
     pd.events = wat;
     
     if(poll(&pd, 1, timeout) == 1)
         return pd.revents & wat;
-    
+#endif
     return 0;
 }
 
@@ -59,12 +79,12 @@ public:
         u8 data[0];
     };
     
-    int sock;
+    SOCKET sock;
     u8* buf;
     int bufsize;
     int recvsize;
     
-    bufsoc(int sock, int bufsize = 1024 * 1024)
+    bufsoc(SOCKET sock, int bufsize = 1024 * 1024)
     {
         this->bufsize = bufsize;
         buf = new u8[bufsize];
@@ -86,7 +106,7 @@ public:
     int readbuf(int flags = 0)
     {
         u32 hdr = 0;
-        int ret = recv(sock, &hdr, 4, flags);
+        int ret = recv(sock, (char*)&hdr, 4, flags);
         if(ret < 0) return -errno;
         if(ret < 4) return -1;
         *(u32*)buf = hdr;
@@ -97,7 +117,7 @@ public:
         int offs = 4;
         while(mustwri)
         {
-            ret = recv(sock, buf + offs , mustwri, flags);
+            ret = recv(sock, (char*)(buf + offs), mustwri, flags);
             if(ret <= 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -114,7 +134,7 @@ public:
         int ret = 0;
         while(mustwri)
         {
-            ret = send(sock, buf + offs , mustwri, flags);
+            ret = send(sock, (char*)(buf + offs) , mustwri, flags);
             if(ret < 0) return -errno;
             mustwri -= ret;
             offs += ret;
@@ -130,29 +150,26 @@ public:
     
     int errformat(char* c, ...)
     {
-        char* wat = nullptr;
         int len = 0;
+        
+        packet* p = pack();
         
         va_list args;
         va_start(args, c);
-        len = vasprintf(&wat, c, args);
+        len = vsnprintf((char*)(p->data + 1), 256, c, args);
         va_end(args);
         
         if(len < 0)
         {
-            puts("out of memory");
+            puts("wat");
             return -1;
         }
         
-        packet* p = pack();
-        
-        printf("Packet error %i: %s\n", p->packetid, wat);
+        printf("Packet error %i: %s\n", p->packetid, (char*)(p->data + 1));
         
         p->data[0] = p->packetid;
         p->packetid = 1;
-        p->size = len + 2;
-        strcpy((char*)(p->data + 1), wat);
-        delete wat;
+        p->size = (len * sizeof(char)) + 2;
         
         return wribuf();
     }
@@ -179,7 +196,58 @@ int PumpEvent()
     return 1;
 }
 
-
+SDL_Surface* mksurface(int width, int height, int bsiz, int pixfmt)
+{
+    int rm, gm, bm, am, bs;
+    
+    switch(pixfmt & 7)
+    {
+        case 0:
+            rm = 0x000000FF;
+            gm = 0x0000FF00;
+            bm = 0x00FF0000;
+            am = 0xFF000000;
+            bs = 4;
+            break;
+        case 2:
+            rm = 0xF800;
+            gm = 0x07E0;
+            bm = 0x001F;
+            am = 0;
+            bs = 2;
+            break;
+        case 3:
+            rm = 0x001F;
+            gm = 0x03E0;
+            bm = 0x7C00;
+            am = 0x8000;
+            bs = 2;
+            break;
+        case 4:
+            rm = 0x000F;
+            gm = 0x00F0;
+            bm = 0x0F00;
+            am = 0xF000;
+            bs = 2;
+            break;
+        default:
+            rm = 0xFF0000;
+            gm = 0x00FF00;
+            bm = 0x0000FF;
+            am = 0;
+            bs = 3;
+            break;
+    }
+    
+    printf("Surface: %ix%i %ibpp (%08X %08X %08X %08X)\n", width, height, bs << 3, rm, gm, bm, am);
+    SDL_Surface* surf = SDL_CreateRGBSurface(0, width, height, bs << 3, rm, gm, bm, am);
+    if(!surf)
+    {
+        printf("No surface! %s :(\n", SDL_GetError());
+    }
+    
+    return surf;
+}
 
 
 SDL_Window* win = 0;
@@ -189,7 +257,7 @@ SDL_Surface* img[2] = {0, 0};
 
 
 int port = 6464;
-int sock = 0;
+SOCKET sock = 0;
 struct sockaddr_in sao;
 socklen_t sizeof_sao = sizeof(sao);
 bufsoc* soc = 0;
@@ -199,8 +267,7 @@ u32* pdata = 0;
 
 
 u8 sbuf[256 * 400 * 4 * 2];
-u8 mehbuf[256 * 400 * 4 * 2];
-int pixfmt[2] = {SDL_PIXELFORMAT_RGB565, SDL_PIXELFORMAT_RGB565};
+//u8 mehbuf[256 * 400 * 4 * 2];
 int srcfmt[2] = {3, 3};
 int stride[2] = {480, 480};
 int bsiz[2] = {2, 2};
@@ -216,13 +283,30 @@ int main(int argc, char** argv)
     }
     
     memset(fpsticks, 0, sizeof(fpsticks));
-    inet_aton(argv[1], &sao.sin_addr);
+    if(!inet_pton4(argv[1], (unsigned char*)&sao.sin_addr))
+    {
+        printf("Malformatted IP address: '%s'\n", argv[1]);
+        return 1;
+    }
+    
+#ifdef WIN32
+    
+    WSADATA socHandle;
+    
+    ret = WSAStartup(MAKEWORD(2,2), &socHandle);
+    if(ret)
+    {
+        printf("WSAStartup failed: %i\n", ret);
+        return 1;
+    }
+    
+#endif
     
     sao.sin_family = AF_INET;
     sao.sin_port = htons(port);
     
     sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if(sock < 0) errfail(socket);
+    if(sock <= 0) errfail(socket);
     soc = new bufsoc(sock, 0x200000);
     p = soc->pack();
     
@@ -240,7 +324,7 @@ int main(int argc, char** argv)
     
     if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        puts("Failed to init SDL");
+        printf("Failed to init SDL: %s\n", SDL_GetError());
         goto killswitch;
     }
     
@@ -253,8 +337,8 @@ int main(int argc, char** argv)
     
     rendertop = SDL_CreateRenderer(win, -1, /*SDL_RENDERER_PRESENTVSYNC*/0);
     
-    img[0] = SDL_CreateRGBSurfaceWithFormat(0, 240, 400, 32, pixfmt[0]);
-    img[1] = SDL_CreateRGBSurfaceWithFormat(0, 240, 320, 32, pixfmt[1]);
+    img[0] = mksurface(240, 400, 3, 1);
+    img[1] = mksurface(240, 320, 3, 1);
     
     SDL_RenderSetLogicalSize(rendertop, 720, 240);
     
@@ -292,49 +376,11 @@ int main(int argc, char** argv)
                 bsiz[0] = stride[0] / 240;
                 bsiz[1] = stride[1] / 240;
                 
-                switch(pdata[0] & 7)
-                {
-                    case 0:
-                        pixfmt[0] = SDL_PIXELFORMAT_RGBA8888;
-                        break;
-                    case 2:
-                        pixfmt[0] = SDL_PIXELFORMAT_RGB565;
-                        break;
-                    case 3:
-                        pixfmt[0] = SDL_PIXELFORMAT_RGBA5551;
-                        break;
-                    case 4:
-                        pixfmt[0] = SDL_PIXELFORMAT_RGBA4444;
-                        break;
-                    default:
-                        pixfmt[0] = SDL_PIXELFORMAT_BGR24;
-                        break;
-                }
-                
-                switch(pdata[2] & 7)
-                {
-                    case 0:
-                        pixfmt[1] = SDL_PIXELFORMAT_RGBA8888;
-                        break;
-                    case 2:
-                        pixfmt[1] = SDL_PIXELFORMAT_RGB565;
-                        break;
-                    case 3:
-                        pixfmt[1] = SDL_PIXELFORMAT_RGBA5551;
-                        break;
-                    case 4:
-                        pixfmt[1] = SDL_PIXELFORMAT_RGBA4444;
-                        break;
-                    default:
-                        pixfmt[1] = SDL_PIXELFORMAT_BGR24;
-                        break;
-                }
-                
                 SDL_FreeSurface(img[0]);
                 SDL_FreeSurface(img[1]);
                 
-                img[0] = SDL_CreateRGBSurfaceWithFormat(0, stride[0] / bsiz[0], 400, bsiz[0] << 3, pixfmt[0]);
-                img[1] = SDL_CreateRGBSurfaceWithFormat(0, stride[1] / bsiz[1], 320, bsiz[1] << 3, pixfmt[1]);
+                img[0] = mksurface(stride[0] / bsiz[0], 400, bsiz[0], srcfmt[0]);
+                img[1] = mksurface(stride[1] / bsiz[1], 320, bsiz[1], srcfmt[1]);
                 break;
             
             case 3:
@@ -373,18 +419,27 @@ int main(int argc, char** argv)
         
         nocoffei:
         
-        SDL_LockSurface(img[0]);
-        memcpy(img[0]->pixels, sbuf, stride[0] * 400);
-        SDL_UnlockSurface(img[0]);
+        if(img[0])
+        {
+            SDL_LockSurface(img[0]);
+            memcpy(img[0]->pixels, sbuf, stride[0] * 400);
+            SDL_UnlockSurface(img[0]);
+            
+            SDL_DestroyTexture(tex[0]);
+            tex[0] = SDL_CreateTextureFromSurface(rendertop, img[0]);
+        }
+        else puts("img[0] nullptr!");
         
-        SDL_LockSurface(img[1]);
-        memcpy(img[1]->pixels, sbuf + (256 * 400 * 4), stride[1] * 320);
-        SDL_UnlockSurface(img[1]);
-        
-        SDL_DestroyTexture(tex[0]);
-        tex[0] = SDL_CreateTextureFromSurface(rendertop, img[0]);
-        SDL_DestroyTexture(tex[1]);
-        tex[1] = SDL_CreateTextureFromSurface(rendertop, img[1]);
+        if(img[1])
+        {
+            SDL_LockSurface(img[1]);
+            memcpy(img[1]->pixels, sbuf + (256 * 400 * 4), stride[1] * 320);
+            SDL_UnlockSurface(img[1]);
+            
+            SDL_DestroyTexture(tex[1]);
+            tex[1] = SDL_CreateTextureFromSurface(rendertop, img[1]);
+        }
+        else puts("img[1] nullptr!");
         
         SDL_Point center;
         center.x = 0;
@@ -440,6 +495,10 @@ int main(int argc, char** argv)
     if(rendertop) SDL_DestroyRenderer(rendertop);    
     if(win) SDL_DestroyWindow(win);
     SDL_Quit();
+    
+#ifdef WIN32
+    WSACleanup();
+#endif
     
     return 0;
 }

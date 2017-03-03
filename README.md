@@ -1,16 +1,18 @@
 ﻿# HorizonM
-utility background process for the Horizon operating system (Nintendo 3DS)
+utility background process for the Nintendo 3DS (codename "Horizon")
 
 `HorizonM` is licensed under the `GNU GPLv3` license. See `LICENSE` for details.
 
 
 ## Current features
 * screen streaming using HorizonScreen
+* VRAM corruptor (hold `ZL`+`ZR`)
 
 
 ## Credits
 - Minnow - figuring out that Base processes can be used
-- ihaveamac - pointing me towards the right direction for fixing memory allocation on new3DS
+- ihaveamac - pointing me towards the right direction for fixing memory allocation on new3DS and getting HorizonScreen to compile on macOS
+- Stary - help with WinSockets in HorizonScreen
 - NekoWasHere @ reddit - betatesting
 - JayLine_ @ reddit - betatesting
 
@@ -45,6 +47,7 @@ See nested projects for more info about building.
 - off -> off ??? - failed to start HorizonM at all
   - old3DS: not enough memory
   - general: HorizonM is not even installed
+  - contrib/dev: check if rsf doesn't contain invalid entries
 - off -> static red - HorizonM failed to enter the main loop, it means that it softlocked or crashed during initialization
   - contrib/dev: check rsf permissions
 - anything -> static white - a C++ exception occurred (most likely memory allocation failure)

@@ -45,7 +45,7 @@ CXXFLAGS	:= $(CFLAGS) -Wno-reorder -fno-rtti -std=gnu++11
 
 ifeq ($(OS),Windows_NT)
 LDFLAGS	=	-m32
-LIBS	:= -lmingw32 -lSDL2main -lSDL2 -mconsole -mwindows -static-libgcc -static-libstdc++
+LIBS	:= -lws2_32 -lwsock32 -lmingw32 -lSDL2main -lSDL2 -mconsole -mwindows -static-libgcc -static-libstdc++
 else
 LIBS	:= $(shell sdl2-config --libs)
 endif
