@@ -651,7 +651,7 @@ void netfunc(void* __dummy_arg__)
                 k->size = siz;
                 *(u32*)k->data = siz * offs[1];
                 memcpy(k->data + 4, ((u8*)capin.screencapture[1].framebuf0_vaddr) + *(u32*)k->data, siz);
-                if(++offs[0] == limit[0]) offs[0] = 0;
+                if(++offs[1] == limit[1]) offs[1] = 0;
                 k->size += 4;
                 *(u32*)k->data += 256 * 400 * 4;
                 soc->wribuf();
